@@ -1,0 +1,209 @@
+<?xml version="1.0"?>
+<!-- Simple Life Simulation v1.0 by Jon Nixon based on  -->
+<!-- http://en.wikipedia.org/wiki/Conway's_Game_of_Life -->
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
+               xmlns:s="library://ns.adobe.com/flex/spark"
+               xmlns:mx="library://ns.adobe.com/flex/mx">
+     <fx:Script>
+          <![CDATA[
+
+import mx.collections.ArrayCollection;
+import spark.events.IndexChangeEvent;
+import com.badjelly.life.Colony;
+import com.badjelly.life.Cell;
+import com.badjelly.life.LifeShape;
+
+[Bindable]
+    public var shapeDP:ArrayCollection = LifeShape.getShapes();
+
+private static var START_ZOOM:int = 8;
+
+private var cellsWide:int = 0;  // Cells across screen
+private var cellsLeft:int = 0;  // x pixel of leftmost edge of cells
+private var cellsRight:int = 0; // x pixel of rightmost edge of cells
+
+private var cellsHigh:int = 0;   // Cells down screen
+private var cellsTop:int = 0;    // y pixel of top edge of cells
+private var cellsBottom:int = 0; // y pixel of bottom edge of cells
+
+private var zoom:int = START_ZOOM;
+private var ox:int = 0;
+private var oy:int = 0;
+
+private var timer:Timer = null; // Timer for regeneration
+
+private var colony:Colony = new Colony(); // Colony being processed
+
+private var cellsOnScreen:Array = new Array(); // List of displayed shapes
+
+private function setBounds():void {
+
+    // Determine width and x coordinates
+    cellsWide = ( canvas.width - 4 ) / zoom;
+    cellsLeft = ( canvas.width - zoom * cellsWide ) / 2 + 2;
+    cellsRight = cellsLeft + zoom * cellsWide;
+
+    // Determine height and y coordinates
+    cellsHigh = ( canvas.height - 4 ) / zoom;
+    cellsTop = ( canvas.height - zoom * cellsHigh ) / 2 + 2;
+    cellsBottom = cellsTop + zoom * cellsHigh;
+
+    // Center colony on screen
+    ox = ( cellsWide / 2 ) - ( colony.getMaxX() + colony.getMinX() ) / 2;
+    oy = ( cellsHigh / 2 ) - ( colony.getMaxY() + colony.getMinY() ) / 2;
+
+    // Clear screen
+    canvas.graphics.clear();
+
+     // Draw outer box
+    canvas.graphics.lineStyle( 1, 0x000000);
+    canvas.graphics.beginFill( 0xffffff );
+    canvas.graphics.drawRect( cellsLeft - 2, cellsTop - 2, cellsRight + 2 - cellsLeft, cellsBottom + 2 - cellsTop );
+    canvas.graphics.endFill();
+
+    // Draw grid
+    canvas.graphics.lineStyle( 1, 0xc0c0c0);
+    for ( var gx:int = cellsLeft - 1; gx < cellsRight; gx += zoom ) {
+        canvas.graphics.moveTo( gx, cellsTop );
+        canvas.graphics.lineTo( gx, cellsBottom );
+    }
+    for ( var gy:int = cellsTop - 1; gy < cellsBottom; gy += zoom ) {
+        canvas.graphics.moveTo( cellsLeft, gy );
+        canvas.graphics.lineTo( cellsRight, gy );
+    }
+}
+
+// Display colony
+private function drawColony():void {
+
+    // Remove all cells from screen
+    for ( var key:String in cellsOnScreen ) {
+        canvas.removeChild( cellsOnScreen[key] );
+        delete cellsOnScreen[key];
+    }
+
+    //if ( zoom > 3 && ( ox + colony.getMinX() < 0 || ox + colony.getMaxX() >= cellsWide
+    //                || oy + colony.getMinY() < 0 || oy + colony.getMaxY() >= cellsHigh ) ) {
+    //    zoom--;
+    //    setBounds();
+    //}
+
+    // Loop through cells
+    for each ( var cell:Cell in colony.getCells() ) {
+        var cx:int = ox + cell.getX();
+        var cy:int = oy + cell.getY();
+
+        // If cell is on screen then draw it and record it
+        if ( cx >= 0 && cx < cellsWide && cy >= 0 && cy < cellsHigh ) {
+            cellsOnScreen[cell.getKey()] = drawCell( cx, cy );
+        }
+    }
+
+    // Display colony info
+    updateInfo();
+}
+
+// Display colony info
+private function updateInfo():void {
+    info.text = "Generation: " + colony.getGeneration() + ", Cells: " + colony.getCellCount();
+}
+
+// Display cell
+private function drawCell( cx:int, cy:int ):Shape {
+    var cellShape:Shape = new Shape();
+    cellShape.graphics.lineStyle( 0, 0x202020);
+    cellShape.graphics.beginFill( 0x202020 );
+    cellShape.graphics.drawRect( cellsLeft + zoom * cx, cellsTop + zoom * cy, zoom - 2, zoom - 2 );
+    cellShape.graphics.endFill();
+    canvas.addChild( cellShape );
+    return cellShape;
+}
+
+// Regenerate and redisplay on schedule
+private function update( e:TimerEvent ):void {
+    colony.regenerate();
+    drawColony();
+    if ( colony.getCellCount() == 0 || colony.getCellCount() > 999 ) {
+        stop();
+    }
+    e.updateAfterEvent();
+}
+
+// Start colony lifecycle
+private function start():void {
+    stage.frameRate = 12;
+    timer=new Timer( 2 * 1000 / stage.frameRate / 3, 0 );
+    timer.addEventListener( TimerEvent.TIMER, update );
+    timer.start();
+}
+
+// Pause colony liefcycle
+private function stop():void {
+    if ( timer != null && timer.running ) {
+        timer.stop();
+    }
+}
+
+// Change state of clicked cell
+private function toggle( e:MouseEvent ):void {
+    var mx:int = e.localX;
+    var my:int = e.localY;
+    if ( mx >= cellsLeft && mx < cellsRight && my >= cellsTop && my < cellsBottom ) {
+        var cx:int = ( mx - cellsLeft ) / zoom;
+        var cy:int = ( my - cellsTop ) / zoom;
+        var cell:Cell = new Cell( cx - ox, cy - oy );
+        if ( colony.toggle( cell ) ) {
+            cellsOnScreen[cell.getKey()] = drawCell( cx, cy );
+        } else {
+            canvas.removeChild( cellsOnScreen[cell.getKey()] );
+            delete cellsOnScreen[cell.getKey()];
+        }
+    }
+    updateInfo();
+    e.updateAfterEvent();
+}
+
+// Reset colony based on dropdown choice
+private function reset():void {
+    stop();
+    zoom = START_ZOOM;
+    colony = new Colony();
+    setBounds();
+    var lifeShape:LifeShape = new LifeShape();
+    colony = lifeShape.makeColony( shapeDDL.selectedItem.shape, cellsWide, cellsHigh );
+    drawColony();
+}
+
+// Clear colony
+private function clear():void {
+    stop();
+    zoom = START_ZOOM;
+    colony = new Colony();
+    setBounds();
+    drawColony();
+}
+
+]]>
+     </fx:Script>
+
+     <s:Panel id="panel" title="Life v1.0 by Jon Nixon" width="100%" height="95%">
+         <s:VGroup left="10" right="10" top="10" bottom="10" height="100%">
+             <s:HGroup width="100%">
+                 <s:Label id="info" text="" width="100%"/>
+                 <s:Label text="Choose a shape and press start, or click on cells to change them"/>
+             </s:HGroup>
+             <s:HGroup width="100%">
+                 <s:Button label="Start" click="start();"/>
+                 <s:Label text="" width="25%"/>
+                 <s:Button label="Stop" click="stop();"/>
+                 <s:Label text="" width="25%"/>
+                 <s:DropDownList id="shapeDDL" selectedIndex="1" width="50%" dataProvider="{shapeDP}" labelField="shape"
+                     change="reset()"/>
+                 <s:Button label="Reset" click="reset();"/>
+                 <s:Button label="Clear" click="clear();"/>
+             </s:HGroup>
+             <mx:UIComponent id="canvas" width="100%" height="100%" creationComplete="reset();" click="toggle( event );"/>
+         </s:VGroup>
+     </s:Panel>
+
+</s:Application>
